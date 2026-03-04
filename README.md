@@ -7,6 +7,9 @@ Other changes:
 - as said above, the way to get the metrics from Azure API
 - code cleanup
 
+```
+docker run --rm -v ./exporter_config.yaml:/app/exporter_config.yaml -p 9090:9090 optionfactory/azure-cost-exporter:v2.0.0
+```
 ---
 # Azure Cost Exporter
 
