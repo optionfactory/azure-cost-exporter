@@ -10,18 +10,16 @@ from azure.core.exceptions import HttpResponseError
 from azure.identity import ClientSecretCredential
 from azure.mgmt.costmanagement import CostManagementClient
 from azure.mgmt.costmanagement.models import QueryDefinition, QueryTimePeriod
-from dateutil.relativedelta import relativedelta
 from prometheus_client import Gauge
 
 
 class MetricExporter:
-    def __init__(self, polling_interval_seconds, metric_name, metric_name_usd, group_by, targets, secrets):
+    def __init__(self, polling_interval_seconds, metric_name, metric_name_usd, group_by, targets):
         self.polling_interval_seconds = polling_interval_seconds
         self.metric_name = metric_name
         self.metric_name_usd = metric_name_usd
         self.group_by = group_by
         self.targets = targets
-        self.secrets = secrets
         # we have verified that there is at least one target
         self.labels = set(targets[0].keys())
         # for now we only support exporting one type of cost (ActualCost)
@@ -42,12 +40,12 @@ class MetricExporter:
             self.fetch()
             time.sleep(self.polling_interval_seconds)
 
-    def init_azure_client(self, tenant_id):
+    def init_azure_client(self, tenant_id, client_id, client_secret):
         client = CostManagementClient(
             credential=ClientSecretCredential(
                 tenant_id=tenant_id,
-                client_id=self.secrets[tenant_id]["client_id"],
-                client_secret=self.secrets[tenant_id]["client_secret"],
+                client_id=client_id,
+                client_secret=client_secret,
             )
         )
 
@@ -80,7 +78,7 @@ class MetricExporter:
         result = azure_client.query.usage(scope, query)
         return result.as_dict()
 
-    def expose_metrics(self, azure_account, result):   
+    def expose_metrics(self, azure_account, result):
         cost = float(result[0])
         costUsd = float(result[1])
 
@@ -118,11 +116,11 @@ class MetricExporter:
     def fetch(self):
         for azure_account in self.targets:
             print("[%s] Querying cost data for Azure tenant %s" % (datetime.now(), azure_account["TenantId"]))
-            azure_client = self.init_azure_client(azure_account["TenantId"])
+            azure_client = self.init_azure_client(azure_account["TenantId"], azure_account["ClientId"], azure_account["ClientSecret"])
 
             try:
                 end_date = datetime.today()
-                start_date = end_date - relativedelta(days=1)
+                start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
                 cost_response = self.query_azure_cost_explorer(
                     azure_client, azure_account["Subscription"], self.group_by, start_date, end_date
                 )

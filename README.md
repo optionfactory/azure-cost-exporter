@@ -1,3 +1,13 @@
+# Why this fork?
+This is a fork of https://github.com/electrolux-oss/azure-cost-exporter with simplified configuration management, and the way to get the metrics from Azure API. The original project grabs the metrics with a 24h sliding window, now gets always from midnight to now.
+
+Other changes:
+- removed Kubernetes configuration
+- merged configuration and secrets
+- as said above, the way to get the metrics from Azure API
+- code cleanup
+
+---
 # Azure Cost Exporter
 
 On Azure we usually use the Cost Management portal to analyze costs, which is a separate dashboard and it only contains cost information. What if we would like to see the trends of both costs and the business metrics? Azure Cost Explorter enables this idea by exposing Azure cost data as Prometheus metrics so that developers can have them together with other observability metrics, in the same place.
@@ -52,34 +62,10 @@ Here are the steps of creating client credentials.
 
 ## Deployment
 
-Modify the `exporter_config.yaml` file first, then run command `python main.py -c exporter_config.yaml` to generate a `secret.yaml` file. Put the credentials (client ID and client secret) of each Azure account into this file and then this use one of the following methods to run the exporter.
+Modify the `exporter_config.yaml` file first, then run command `python main.py -c exporter_config.yaml`.
 
 ### Docker
 
 ```
-docker run --rm -v ./exporter_config.yaml:/app/exporter_config.yaml -v ./secret.yaml:/app/secret.yaml -p 9090:9090 opensourceelectrolux/azure-cost-exporter:v1.0.1
-```
-
-### Kubernetes
-
-- Create Namespace
-```
-kubectl create ns finops
-```
-
-- Create Secret
-```
-kubectl create secret generic azure-cost-exporter \
-    --namespace=finops \
-    --from-file=./secret.yaml
-```
-
-- Create ConfigMap
-```
-kubectl create configmap azure-cost-exporter-config --namespace finops --from-file=./exporter_config.yaml
-```
-
-- Create Deployment
-```
-kubectl create --namespace finops -f ./deployment/k8s/deployment.yaml
+docker run --rm -v ./exporter_config.yaml:/app/exporter_config.yaml -p 9090:9090 opensourceelectrolux/azure-cost-exporter:v1.0.1
 ```

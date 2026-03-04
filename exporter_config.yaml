@@ -22,3 +22,5 @@ target_azure_accounts:
     Subscription: PUT_YOUR_AZURE_SUBSCRIPTION_ID_HERE
     ProjectName: myproject
     EnvironmentName: dev
+    ClientId: PUT_YOUR_AZURE_CLIENT_ID_HERE
+    ClientSecret: PUT_YOUR_AZURE_CLIENT_SECRET_HERE
