@@ -1,13 +1,18 @@
-FROM python:3.12.13-alpine
+FROM python:3.12-alpine
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-#RUN apk add --update gcc libc-dev linux-headers libffi-dev
+WORKDIR /app
 
-ENV APP_HOME=/app
-WORKDIR /
+# Copia i file delle dipendenze
+COPY pyproject.toml uv.lock ./
 
-COPY ./app $APP_HOME
-COPY *.py package.json requirements.txt /
-RUN pip install -r requirements.txt
+# Installa le dipendenze
+RUN uv sync --frozen --no-cache
+
+# Copia il resto dell'applicazione
+COPY . .
 
 ENV PYTHONUNBUFFERED=1
-ENTRYPOINT ["python", "main.py", "-c", "/exporter_config.yaml"]
+
+# Esegue tramite uv run per gestire l'ambiente correttamente
+ENTRYPOINT ["uv", "run", "main.py", "-c", "/exporter_config.yaml"]
