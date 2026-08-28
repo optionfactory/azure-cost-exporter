@@ -56,7 +56,7 @@ class MetricExporter:
     def init_azure_client(self, tenant_id, client_id, client_secret):
         return self.get_azure_client(tenant_id, client_id, client_secret)
 
-    def query_azure_cost_explorer(self, azure_client, subscription, group_by, start_date, end_date, max_retries=3):
+    def query_azure_cost_explorer(self, azure_client, subscription, group_by, start_date, end_date, max_retries=5):
         scope = f"/subscriptions/{subscription}"
 
         groups = list()
@@ -86,24 +86,33 @@ class MetricExporter:
                 return result.as_dict()
             except HttpResponseError as e:
                 if e.status_code == 429 and attempt < max_retries:
-                    retry_after = 10 * (2 ** attempt)
-                    if hasattr(e, "response") and e.response is not None and hasattr(e.response, "headers"):
-                        header_val = e.response.headers.get("Retry-After") or e.response.headers.get(
-                            "x-ms-ratelimit-microsoft.costmanagement-entity-retry-after"
-                        )
-                        if header_val:
+                    retry_after = 15 * (2 ** attempt)
+                    headers = getattr(getattr(e, "response", None), "headers", {}) or {}
+
+                    found_header_retry = None
+                    for k, v in headers.items():
+                        if "retry-after" in k.lower() and v:
                             try:
-                                retry_after = int(header_val)
+                                val = int(v)
+                                if found_header_retry is None or val > found_header_retry:
+                                    found_header_retry = val
                             except ValueError:
                                 pass
+
+                    if found_header_retry is not None:
+                        # Aggiungiamo 1 secondo di margine per evitare corse con la finestra del rate limiter
+                        retry_after = found_header_retry + 1
+
+                    err_details = e.message or (e.response.text() if hasattr(e.response, "text") else str(e))
                     logging.warning(
-                        f"Rate limit (429) received for subscription {subscription}. Retrying in {retry_after} seconds (attempt {attempt + 1}/{max_retries})..."
+                        f"Rate limit (429) received for subscription {subscription}. Reason: \"{str.replace(err_details, '\n', ' ')}\". Retrying in {retry_after} seconds (attempt {attempt + 1}/{max_retries})..."
                     )
                     time.sleep(retry_after)
                 else:
                     raise
 
     def expose_metrics(self, azure_account, result):
+        logging.info(f"Exposing metrics for account {azure_account['subscription_id']}")
         cost = float(result[0])
         cost_usd = float(result[1])
 
@@ -144,7 +153,7 @@ class MetricExporter:
             azure_client = self.get_azure_client(azure_account["TenantId"], azure_account["ClientId"], azure_account["ClientSecret"])
 
             try:
-                end_date = datetime.today()
+                end_date = datetime.now(timezone.utc)
                 start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
                 cost_response = self.query_azure_cost_explorer(
                     azure_client, azure_account["Subscription"], self.group_by, start_date, end_date
