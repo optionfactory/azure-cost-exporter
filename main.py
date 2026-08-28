@@ -76,7 +76,18 @@ def main(conf):
 
 
 if __name__ == "__main__":
-    logger_format = "%(asctime)-15s %(levelname)-8s %(message)s"
-    logging.basicConfig(level=logging.WARNING, format=logger_format)
+    logger_format = "%(asctime)-15s %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s"
+    default_log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(level=getattr(logging, default_log_level, logging.INFO), format=logger_format)
+
+    # Silenzia i log HTTP e di autenticazione verbosi dell'SDK Azure e urllib3
+    logging.getLogger("azure").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+
     config = get_configs()
+    if "log_level" in config and config["log_level"]:
+        log_level_str = str(config["log_level"]).upper()
+        logging.getLogger().setLevel(getattr(logging, log_level_str, logging.INFO))
+        logging.getLogger("azure").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
     main(config)

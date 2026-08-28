@@ -20,6 +20,7 @@ class MetricExporter:
         self.metric_name_usd = metric_name_usd
         self.group_by = group_by
         self.targets = targets
+        self.clients = {}
         # we have verified that there is at least one target
         self.labels = set(targets[0].keys())
         # for now we only support exporting one type of cost (ActualCost)
@@ -40,18 +41,22 @@ class MetricExporter:
             self.fetch()
             time.sleep(self.polling_interval_seconds)
 
-    def init_azure_client(self, tenant_id, client_id, client_secret):
-        client = CostManagementClient(
-            credential=ClientSecretCredential(
-                tenant_id=tenant_id,
-                client_id=client_id,
-                client_secret=client_secret,
+    def get_azure_client(self, tenant_id, client_id, client_secret):
+        key = (tenant_id, client_id)
+        if key not in self.clients:
+            self.clients[key] = CostManagementClient(
+                credential=ClientSecretCredential(
+                    tenant_id=tenant_id,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                )
             )
-        )
+        return self.clients[key]
 
-        return client
+    def init_azure_client(self, tenant_id, client_id, client_secret):
+        return self.get_azure_client(tenant_id, client_id, client_secret)
 
-    def query_azure_cost_explorer(self, azure_client, subscription, group_by, start_date, end_date):
+    def query_azure_cost_explorer(self, azure_client, subscription, group_by, start_date, end_date, max_retries=3):
         scope = f"/subscriptions/{subscription}"
 
         groups = list()
@@ -70,12 +75,33 @@ class MetricExporter:
                 grouping=groups),
             timeframe="Custom",
             time_period=QueryTimePeriod(
-                from_property=datetime(start_date.year, start_date.month, start_date.day, tzinfo=timezone.utc),
-                to=datetime(end_date.year, end_date.month, end_date.day, tzinfo=timezone.utc),
+                from_property=datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=timezone.utc),
+                to=datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=timezone.utc),
             ),
         )
-        result = azure_client.query.usage(scope, query)
-        return result.as_dict()
+
+        for attempt in range(max_retries + 1):
+            try:
+                result = azure_client.query.usage(scope, query)
+                return result.as_dict()
+            except HttpResponseError as e:
+                if e.status_code == 429 and attempt < max_retries:
+                    retry_after = 10 * (2 ** attempt)
+                    if hasattr(e, "response") and e.response is not None and hasattr(e.response, "headers"):
+                        header_val = e.response.headers.get("Retry-After") or e.response.headers.get(
+                            "x-ms-ratelimit-microsoft.costmanagement-entity-retry-after"
+                        )
+                        if header_val:
+                            try:
+                                retry_after = int(header_val)
+                            except ValueError:
+                                pass
+                    logging.warning(
+                        f"Rate limit (429) received for subscription {subscription}. Retrying in {retry_after} seconds (attempt {attempt + 1}/{max_retries})..."
+                    )
+                    time.sleep(retry_after)
+                else:
+                    raise
 
     def expose_metrics(self, azure_account, result):
         cost = float(result[0])
@@ -114,8 +140,8 @@ class MetricExporter:
 
     def fetch(self):
         for azure_account in self.targets:
-            print("[%s] Querying cost data for Azure tenant %s" % (datetime.now(), azure_account["TenantId"]))
-            azure_client = self.init_azure_client(azure_account["TenantId"], azure_account["ClientId"], azure_account["ClientSecret"])
+            logging.info(f"Querying cost data for Azure tenant {azure_account['TenantId']}")
+            azure_client = self.get_azure_client(azure_account["TenantId"], azure_account["ClientId"], azure_account["ClientSecret"])
 
             try:
                 end_date = datetime.today()
@@ -124,10 +150,10 @@ class MetricExporter:
                     azure_client, azure_account["Subscription"], self.group_by, start_date, end_date
                 )
             except HttpResponseError as e:
-                logging.error(e.reason)
+                logging.error(f"Failed to query cost data for subscription {azure_account['Subscription']}: {e}")
                 continue
 
-            for result in cost_response["rows"]:
+            for result in cost_response.get("rows", []):
                 if result[2] != int(start_date.strftime("%Y%m%d")):
                     # it is possible that Azure returns cost data which is different than the specified date
                     # for example, the query time period is 2023-07-10 00:00:00+00:00 to 2023-07-11 00:00:00+00:00
