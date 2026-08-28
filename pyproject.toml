@@ -5,11 +5,11 @@ description = "Cost Explorer for Azure, export in prometheus format the metrics"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "azure-core==1.39.0",
+    "azure-core==1.41.0",
     "azure-identity==1.25.3",
-    "azure-mgmt-costmanagement==4.0.1",
+    "azure-mgmt-costmanagement==5.0.0",
     "envyaml==1.10.211231",
-    "prometheus-client==0.25.0",
+    "prometheus-client==0.26.0",
     "python-dateutil==2.9.0.post0",
     "pyyaml==6.0.3",
 ]

@@ -63,15 +63,15 @@ def get_configs():
     return config
 
 
-def main(config):
+def main(conf):
     app_metrics = MetricExporter(
-        polling_interval_seconds=config["polling_interval_seconds"],
-        metric_name=config["metric_name"],
-        metric_name_usd=config["metric_name_usd"],
-        group_by=config["group_by"],
-        targets=config["target_azure_accounts"],
+        polling_interval_seconds=conf["polling_interval_seconds"],
+        metric_name=conf["metric_name"],
+        metric_name_usd=conf["metric_name_usd"],
+        group_by=conf["group_by"],
+        targets=conf["target_azure_accounts"],
     )
-    start_http_server(config["exporter_port"])
+    start_http_server(conf["exporter_port"])
     app_metrics.run_metrics_loop()
 
 
